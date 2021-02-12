@@ -107,9 +107,9 @@ experimentIds.forEach(async experimentId => {
                   waitingFound = true
                 }
                 if (waitingFound && nextItem.action === 'event' && nextItem.name === 'playing') {
-                  let stallDuration = parseFloat((moment(nextItem.time).diff(startStall) / 1000).toFixed(2))
+                  let stallDuration = parseFloat((moment(nextItem.time).diff(startStall) / 1000).toFixed(3))
                   while (stallDuration + mediaTime + stallsTime + startUpTime > experimentDuration) {
-                    stallDuration -= 0.01
+                    stallDuration -= stallTolerance
                   }
                   reInit = true
                   stalling.push([mediaTime, stallDuration])
@@ -147,7 +147,6 @@ experimentIds.forEach(async experimentId => {
                 spawnSync('ffmpeg', [
                   '-y',
                   '-i', stallVideoPath,
-                  '-ss', '00:00:0.0',
                   '-to', stallDuration,
                   outputPath + '/seg-' + i + '.mp4'
                 ])
@@ -161,7 +160,6 @@ experimentIds.forEach(async experimentId => {
                   spawnSync('ffmpeg', [
                     '-y',
                     '-i', stallVideoPath,
-                    '-ss', '00:00:0.0',
                     '-to', stallDuration,
                     outputPath + '/temp-loading.mp4'
                   ])
