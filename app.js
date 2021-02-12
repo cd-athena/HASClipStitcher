@@ -27,6 +27,7 @@ experimentIds.forEach(async experimentId => {
     const stallVideoPath = 'in/loading.mp4'
     const stallVideoDuration = 1.023 // second
     const segmentDuration = 2 // second
+    const frameRate = 24
     const experimentDuration = 90 // second
     const stalling = []
     const ffmpegJobs = []
@@ -148,19 +149,20 @@ experimentIds.forEach(async experimentId => {
                   '-y',
                   '-i', stallVideoPath,
                   '-to', stallDuration,
-                  outputPath + '/seg-' + i + '.mp4'
+                  outputPath + '/stitchedLoading.mp4'
                 ])
               } else {
-                while (stallDuration > stallVideoDuration) {
+                let leftStallDuration = stallDuration
+                while (leftStallDuration > stallVideoDuration) {
                   fs.appendFileSync(outputPath + '/loading.txt', 'file \'../../' + stallVideoPath + '\'\n')
-                  stallDuration -= stallVideoDuration
+                  leftStallDuration -= stallVideoDuration
                 }
 
-                if (stallDuration > stallTolerance) {
+                if (leftStallDuration > stallTolerance) {
                   spawnSync('ffmpeg', [
                     '-y',
                     '-i', stallVideoPath,
-                    '-to', stallDuration,
+                    '-to', leftStallDuration,
                     outputPath + '/temp-loading.mp4'
                   ])
 
@@ -173,14 +175,61 @@ experimentIds.forEach(async experimentId => {
                   '-safe', 0,
                   '-i', outputPath + '/loading.txt',
                   '-c', 'copy',
-                  outputPath + '/seg-' + i + '.mp4']
-                )
+                  outputPath + '/stitchedLoading.mp4'
+                ])
 
-                if (stallDuration > stallTolerance) {
+                if (leftStallDuration > stallTolerance) {
                   fs.unlinkSync(outputPath + '/temp-loading.mp4')
                 }
                 fs.unlinkSync(outputPath + '/loading.txt')
               }
+
+              const ffprobeLastSegment = spawnSync('ffprobe', [
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,sample_aspect_ratio,display_aspect_ratio',
+                '-of', 'json',
+                outputPath + '/seg-' + (i - 1) + '.mp4'
+              ])
+
+              const lastSegmentProperties = JSON.parse(ffprobeLastSegment.stdout.toString())
+              const resolution = lastSegmentProperties.streams[0].width + 'x' + lastSegmentProperties.streams[0].height
+              const sar = lastSegmentProperties.streams[0]['sample_aspect_ratio']
+              const dar = lastSegmentProperties.streams[0]['display_aspect_ratio']
+
+              spawnSync('ffmpeg', [
+                '-y',
+                '-i', outputPath + '/stitchedLoading.mp4',
+                '-r', frameRate,
+                '-s', resolution,
+                '-vf', 'setsar=' + sar + ',setdar=' + dar,
+                outputPath + '/adjustedLoading.mp4'
+              ])
+
+              fs.unlinkSync(outputPath + '/stitchedLoading.mp4')
+
+              spawnSync('ffmpeg', [
+                '-sseof', '-3',
+                '-i', outputPath + '/seg-' + (i - 1) + '.mp4',
+                '-update', 1,
+                '-q:v', 1,
+                outputPath + '/lastSegmentLastFrame.png'
+              ])
+
+              spawnSync('ffmpeg', [
+                '-y',
+                '-framerate', frameRate,
+                '-loop', 1,
+                '-i', outputPath + '/lastSegmentLastFrame.png',
+                '-i', outputPath + '/adjustedLoading.mp4',
+                '-filter_complex', '[1]format=argb,colorchannelmixer=aa=0.5[ol];[0][ol]overlay',
+                '-t', stallDuration,
+                outputPath + '/seg-' + i + '.mp4'
+              ])
+
+              fs.unlinkSync(outputPath + '/adjustedLoading.mp4')
+              fs.unlinkSync(outputPath + '/lastSegmentLastFrame.png')
+
               fs.appendFileSync(outputPath + '/list.txt', 'file \'seg-' + i + '.mp4\'\n')
               resolve()
             }
