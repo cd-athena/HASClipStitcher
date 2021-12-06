@@ -28,7 +28,7 @@ experimentIds.forEach(async experimentId => {
     const stallVideoDuration = 1.023 // second
     const segmentDuration = 2 // second
     const frameRate = 24
-    const experimentDuration = 90 // second
+    const experimentDuration = 120 // second
     const stalling = []
     const ffmpegJobs = []
     const ITUP1203Args = [
@@ -143,7 +143,7 @@ experimentIds.forEach(async experimentId => {
               ITUP1203Args.push(outputPath + '/seg-' + i + '.mp4')
               resolve()
             } else {
-              let stallDuration = stalling[currentStallIndex++][1]
+              const stallDuration = stalling[currentStallIndex++][1]
               if (stallDuration <= stallVideoDuration) {
                 spawnSync('ffmpeg', [
                   '-y',
@@ -184,51 +184,55 @@ experimentIds.forEach(async experimentId => {
                 fs.unlinkSync(outputPath + '/loading.txt')
               }
 
-              const ffprobeLastSegment = spawnSync('ffprobe', [
-                '-v', 'error',
-                '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height,sample_aspect_ratio,display_aspect_ratio',
-                '-of', 'json',
-                outputPath + '/seg-' + (i - 1) + '.mp4'
-              ])
+              if (fs.existsSync(outputPath + '/seg-' + (i - 1) + '.mp4')) {
+                const ffprobeLastSegment = spawnSync('ffprobe', [
+                  '-v', 'error',
+                  '-select_streams', 'v:0',
+                  '-show_entries', 'stream=width,height,sample_aspect_ratio,display_aspect_ratio',
+                  '-of', 'json',
+                  outputPath + '/seg-' + (i - 1) + '.mp4'
+                ])
 
-              const lastSegmentProperties = JSON.parse(ffprobeLastSegment.stdout.toString())
-              const resolution = lastSegmentProperties.streams[0].width + 'x' + lastSegmentProperties.streams[0].height
-              const sar = lastSegmentProperties.streams[0]['sample_aspect_ratio']
-              const dar = lastSegmentProperties.streams[0]['display_aspect_ratio']
+                const lastSegmentProperties = JSON.parse(ffprobeLastSegment.stdout.toString())
+                const resolution = lastSegmentProperties.streams[0].width + 'x' + lastSegmentProperties.streams[0].height
+                const sar = lastSegmentProperties.streams[0].sample_aspect_ratio
+                const dar = lastSegmentProperties.streams[0].display_aspect_ratio
 
-              spawnSync('ffmpeg', [
-                '-y',
-                '-i', outputPath + '/stitchedLoading.mp4',
-                '-r', frameRate,
-                '-s', resolution,
-                '-vf', 'setsar=' + sar + ',setdar=' + dar,
-                outputPath + '/adjustedLoading.mp4'
-              ])
+                spawnSync('ffmpeg', [
+                  '-y',
+                  '-i', outputPath + '/stitchedLoading.mp4',
+                  '-r', frameRate,
+                  '-s', resolution,
+                  '-vf', 'setsar=' + sar + ',setdar=' + dar,
+                  outputPath + '/adjustedLoading.mp4'
+                ])
 
-              fs.unlinkSync(outputPath + '/stitchedLoading.mp4')
+                fs.unlinkSync(outputPath + '/stitchedLoading.mp4')
 
-              spawnSync('ffmpeg', [
-                '-sseof', '-3',
-                '-i', outputPath + '/seg-' + (i - 1) + '.mp4',
-                '-update', 1,
-                '-q:v', 1,
-                outputPath + '/lastSegmentLastFrame.png'
-              ])
+                spawnSync('ffmpeg', [
+                  '-sseof', '-3',
+                  '-i', outputPath + '/seg-' + (i - 1) + '.mp4',
+                  '-update', 1,
+                  '-q:v', 1,
+                  outputPath + '/lastSegmentLastFrame.png'
+                ])
 
-              spawnSync('ffmpeg', [
-                '-y',
-                '-framerate', frameRate,
-                '-loop', 1,
-                '-i', outputPath + '/lastSegmentLastFrame.png',
-                '-i', outputPath + '/adjustedLoading.mp4',
-                '-filter_complex', '[1]format=argb,colorchannelmixer=aa=0.5[ol];[0][ol]overlay',
-                '-t', stallDuration,
-                outputPath + '/seg-' + i + '.mp4'
-              ])
+                spawnSync('ffmpeg', [
+                  '-y',
+                  '-framerate', frameRate,
+                  '-loop', 1,
+                  '-i', outputPath + '/lastSegmentLastFrame.png',
+                  '-i', outputPath + '/adjustedLoading.mp4',
+                  '-filter_complex', '[1]format=argb,colorchannelmixer=aa=0.5[ol];[0][ol]overlay',
+                  '-t', stallDuration,
+                  outputPath + '/seg-' + i + '.mp4'
+                ])
 
-              fs.unlinkSync(outputPath + '/adjustedLoading.mp4')
-              fs.unlinkSync(outputPath + '/lastSegmentLastFrame.png')
+                fs.unlinkSync(outputPath + '/adjustedLoading.mp4')
+                fs.unlinkSync(outputPath + '/lastSegmentLastFrame.png')
+              } else {
+                fs.renameSync(outputPath + '/stitchedLoading.mp4', outputPath + '/seg-' + i + '.mp4')
+              }
 
               fs.appendFileSync(outputPath + '/list.txt', 'file \'seg-' + i + '.mp4\'\n')
               resolve()
