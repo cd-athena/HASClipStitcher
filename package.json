@@ -9,8 +9,8 @@
   "author": "Babak T [babak@itec.aau.at]",
   "license": "ISC",
   "dependencies": {
-    "moment": "^2.27.0",
-    "aws-sdk": "^2.744.0"
+    "aws-sdk": "^2.1043.0",
+    "moment": "^2.27.0"
   },
   "devDependencies": {
     "standard": "^14.3.4"
