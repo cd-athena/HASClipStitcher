@@ -8,7 +8,7 @@ const dynamoDb = new AWS.DynamoDB.DocumentClient()
 const networkShape = 'fluctuation'
 const resultPath = 'result/'
 const experimentIds = JSON.parse(fs.readFileSync(networkShape + '.json').toString())
-fs.appendFileSync(resultPath + networkShape + '.csv', 'experimentId,sequenceTitle,playerABR,meanITUP1203,mediaTime,stallsTime,startUpTime\n')
+fs.appendFileSync(resultPath + networkShape + '.csv', 'experimentId,sequenceTitle,playerABR,meanITUP1203,mediaTime,stallsTime,startUpTime,qualitySwitch,averageBitrate\n')
 
 experimentIds.forEach(async experimentId => {
   await new Promise((resolve, reject) => {
@@ -20,6 +20,8 @@ experimentIds.forEach(async experimentId => {
     let inputPath = 'in/'
     let mediaTime = 0
     let reInit = false
+    let qualitySwitchNumber = 0
+    const bitrates = []
     const displaySize = '1280x720'
     const stallTolerance = 0.001
     const stitchedSegmentNames = []
@@ -86,6 +88,12 @@ experimentIds.forEach(async experimentId => {
               if (!stitchedSegmentNames.includes(segmentName)) {
                 stitchedSegmentNames.push(segmentName)
                 mediaTime += segmentDuration
+
+                bitrates.push(parseInt(bitrate))
+
+                if (bitrate !== currentBitrate && currentBitrate !== 0) {
+                  qualitySwitchNumber++
+                }
 
                 if (bitrate !== currentBitrate || reInit) {
                   reInit = false
@@ -271,7 +279,8 @@ experimentIds.forEach(async experimentId => {
 
           fs.appendFileSync(resultPath + networkShape + '.csv', experimentId + ',' + sequenceTitle + ',' +
             playerABR + ',' + meanITUP1203.toFixed(2) + ',' + mediaTime.toFixed(2) + ',' +
-            stallsTime.toFixed(2) + ',' + startUpTime.toFixed(2) + '\n')
+            stallsTime.toFixed(2) + ',' + startUpTime.toFixed(2) + ',' + qualitySwitchNumber +
+            ',' + bitrates.reduce(function (p, c, i, a) { return p + (c / a.length) }, 0).toFixed(2) + '\n')
 
           spawnSync('ffmpeg', [
             '-y',
