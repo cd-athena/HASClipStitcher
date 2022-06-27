@@ -7,7 +7,7 @@ const dynamoDb = new AWS.DynamoDB.DocumentClient()
 
 const networkShape = 'network'
 const resultPath = 'result/'
-const generateVideo = true
+const generateVideo = false
 const experimentIds = JSON.parse(fs.readFileSync(networkShape + '.json').toString())
 fs.appendFileSync(resultPath + networkShape + '.csv', 'experimentId,sequenceTitle,playerABR,meanITUP1203,mediaTime,stallsTime,startUpTime,qualitySwitch,averageBitrate\n')
 
@@ -88,7 +88,8 @@ experimentIds.forEach(async experimentId => {
           })
 
           if (startUpTime < 1) {
-            return reject(new Error(experimentId + ' Could not calculate the startup time'))
+            console.warn('Warning!!! Less than a second startup time for', experimentId, playerABR)
+            // return reject(new Error(experimentId + ' ' + playerABR + ' Could not calculate the startup time'))
           }
 
           clients[playerABR].forEach(item => {
@@ -259,50 +260,55 @@ experimentIds.forEach(async experimentId => {
 
           Promise.all(ffmpegJobs).then(() => {
             const ITUP1203Extractor = spawnSync('python3', ITUP1203Args)
-            const ITUP1203Input = JSON.parse(ITUP1203Extractor.stdout.toString())
+            const extractorOutput = ITUP1203Extractor.stdout.toString()
 
-            ITUP1203Input.IGen.displaySize = displaySize
-            ITUP1203Input.I23.stalling = stalling
-            fs.writeFileSync(outputPath + '/ITUP1203Input.json', JSON.stringify(ITUP1203Input))
-
-            const ITUP1203 = spawnSync('python3', [
-              '-m', 'itu_p1203',
-              outputPath + '/ITUP1203Input.json'
-            ])
-            const metrics = ITUP1203.stdout.toString()
-            let metricsJson
             try {
-              metricsJson = JSON.parse(metrics)
-            } catch (exception) {
-              console.log(experimentId)
-              console.error(exception)
+              const ITUP1203Input = JSON.parse(extractorOutput)
+              ITUP1203Input.IGen.displaySize = displaySize
+              ITUP1203Input.I23.stalling = stalling
+              fs.writeFileSync(outputPath + '/ITUP1203Input.json', JSON.stringify(ITUP1203Input))
+
+              const ITUP1203 = spawnSync('python3', [
+                '-m', 'itu_p1203',
+                outputPath + '/ITUP1203Input.json'
+              ])
+              const metrics = ITUP1203.stdout.toString()
+              let metricsJson
+              try {
+                metricsJson = JSON.parse(metrics)
+              } catch (exception) {
+                console.log(experimentId)
+                console.error(exception)
+              }
+              fs.writeFileSync(outputPath + '/ITUP1203.json', metrics)
+
+              let total = 0
+              Object.keys(metricsJson).forEach(segmentName => {
+                total += metricsJson[segmentName].O46
+              })
+
+              const meanITUP1203 = total / Object.keys(metricsJson).length
+
+              fs.appendFileSync(resultPath + networkShape + '.csv', experimentId + ',' + sequenceTitle + ',' +
+                playerABR + ',' + meanITUP1203.toFixed(2) + ',' + mediaTime.toFixed(2) + ',' +
+                stallsTime.toFixed(2) + ',' + startUpTime.toFixed(2) + ',' + qualitySwitchNumber +
+                ',' + bitrates.reduce(function (p, c, i, a) { return p + (c / a.length) }, 0).toFixed(2) + '\n')
+
+              if (generateVideo) {
+                spawnSync('ffmpeg', [
+                  '-y',
+                  '-f', 'concat',
+                  '-safe', 0,
+                  '-i', outputPath + '/list.txt',
+                  '-c', 'copy',
+                  resultPath + experimentId + '-' + playerABR + '.mp4']
+                )
+              }
+
+              console.log(experimentId, playerABR, 'done.')
+            } catch (e) {
+              console.error(experimentId, playerABR, ITUP1203Extractor.stderr.toString(), e.toString())
             }
-            fs.writeFileSync(outputPath + '/ITUP1203.json', metrics)
-
-            let total = 0
-            Object.keys(metricsJson).forEach(segmentName => {
-              total += metricsJson[segmentName].O46
-            })
-
-            const meanITUP1203 = total / Object.keys(metricsJson).length
-
-            fs.appendFileSync(resultPath + networkShape + '.csv', experimentId + ',' + sequenceTitle + ',' +
-              playerABR + ',' + meanITUP1203.toFixed(2) + ',' + mediaTime.toFixed(2) + ',' +
-              stallsTime.toFixed(2) + ',' + startUpTime.toFixed(2) + ',' + qualitySwitchNumber +
-              ',' + bitrates.reduce(function (p, c, i, a) { return p + (c / a.length) }, 0).toFixed(2) + '\n')
-
-            if (generateVideo) {
-              spawnSync('ffmpeg', [
-                '-y',
-                '-f', 'concat',
-                '-safe', 0,
-                '-i', outputPath + '/list.txt',
-                '-c', 'copy',
-                resultPath + experimentId + '-' + playerABR + '.mp4']
-              )
-            }
-
-            console.log(experimentId, playerABR, 'done.')
             resolve()
           })
         })
