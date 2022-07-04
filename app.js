@@ -25,16 +25,27 @@ experimentIds.forEach(async experimentId => {
       }
     }
 
-    dynamoDb.query(queryParams, (error, data) => {
-      if (error) {
-        return reject(new Error(experimentId + ' Unable to query. ' + JSON.stringify(error, null, 2)))
-      }
+    let resultset
+    let items = [];
+    (async () => {
+      do {
+        if (resultset && resultset.LastEvaluatedKey) {
+          queryParams.ExclusiveStartKey = resultset.LastEvaluatedKey
+        }
+        try {
+          const data = await dynamoDb.query(queryParams).promise()
+          resultset = data
+          items = items.concat(data.Items)
+        } catch (e) {
+          return reject(new Error(experimentId + ' Unable to query. ' + JSON.stringify(e, null, 2)))
+        }
+      } while (resultset.LastEvaluatedKey)
 
-      if (data.Items.length > 0) {
-        const sequenceTitle = data.Items[0].title
+      if (items.length > 0) {
+        const sequenceTitle = items[0].title
 
         const clients = {}
-        data.Items.forEach(item => {
+        items.forEach(item => {
           if (!clients[item.playerABR]) {
             clients[item.playerABR] = []
           }
@@ -58,7 +69,7 @@ experimentIds.forEach(async experimentId => {
           const stallVideoDuration = 1.023 // second
           const segmentDuration = 4 // second
           const frameRate = 24
-          const experimentDuration = 30 // second
+          const experimentDuration = 180 // second
           const bitrates = []
           const stitchedSegmentNames = []
           const stalling = []
@@ -86,11 +97,6 @@ experimentIds.forEach(async experimentId => {
               stalling.push([0, startUpTime])
             }
           })
-
-          if (startUpTime < 1) {
-            console.warn('Warning!!! Less than a second startup time for', experimentId, playerABR)
-            // return reject(new Error(experimentId + ' ' + playerABR + ' Could not calculate the startup time'))
-          }
 
           clients[playerABR].forEach(item => {
             if (mediaTime + stallsTime + startUpTime < experimentDuration) {
@@ -315,6 +321,6 @@ experimentIds.forEach(async experimentId => {
       } else {
         return reject(new Error(experimentId + ' Empty resultset from DDB'))
       }
-    })
+    })()
   })
 })
